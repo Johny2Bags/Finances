@@ -1,0 +1,356 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area 
+} from 'recharts';
+import { 
+  Plus, Trash2, TrendingUp, Landmark, ShieldCheck, ArrowUpCircle, Info, Calculator, DollarSign, PlusCircle
+} from 'lucide-react';
+
+const App = () => {
+  // --- State Management ---
+  const [debts, setDebts] = useState([
+    { id: 1, name: 'Primary Mortgage', balance: 250000, rate: 5.5, minPayment: 1419 },
+    { id: 2, name: 'Car Loan', balance: 15000, rate: 7.2, minPayment: 350 }
+  ]);
+
+  const [savings, setSavings] = useState([
+    { id: 1, name: 'High Yield Savings', balance: 10000, rate: 4.5 },
+    { id: 2, name: 'Index Fund', balance: 5000, rate: 8.0 }
+  ]);
+
+  const [extraCash, setExtraCash] = useState(500);
+
+  // --- Form States ---
+  const [showDebtForm, setShowDebtForm] = useState(false);
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [newEntry, setNewEntry] = useState({ name: '', balance: '', rate: '', minPayment: '' });
+
+  // --- Actions ---
+  const addDebt = () => {
+    if (!newEntry.name || !newEntry.balance) return;
+    setDebts([...debts, { 
+      id: Date.now(), 
+      name: newEntry.name, 
+      balance: parseFloat(newEntry.balance), 
+      rate: parseFloat(newEntry.rate) || 0, 
+      minPayment: parseFloat(newEntry.minPayment) || 0 
+    }]);
+    setNewEntry({ name: '', balance: '', rate: '', minPayment: '' });
+    setShowDebtForm(false);
+  };
+
+  const addSaving = () => {
+    if (!newEntry.name || !newEntry.balance) return;
+    setSavings([...savings, { 
+      id: Date.now(), 
+      name: newEntry.name, 
+      balance: parseFloat(newEntry.balance), 
+      rate: parseFloat(newEntry.rate) || 0 
+    }]);
+    setNewEntry({ name: '', balance: '', rate: '', minPayment: '' });
+    setShowSaveForm(false);
+  };
+
+  // --- Recommendations Logic ---
+  const recommendation = useMemo(() => {
+    if (debts.length === 0 && savings.length === 0) return null;
+    const highestDebt = [...debts].sort((a, b) => b.rate - a.rate)[0];
+    const highestSavings = [...savings].sort((a, b) => b.rate - a.rate)[0];
+
+    if (!highestDebt) return { action: "Keep Saving", reason: "No debts found! Focus on your highest return investments.", icon: <TrendingUp /> };
+
+    const debtRate = highestDebt.rate;
+    const savingsRate = highestSavings ? highestSavings.rate : 0;
+
+    if (debtRate > savingsRate) {
+      return {
+        action: `Pay extra toward ${highestDebt.name}`,
+        reason: `Your debt interest (${debtRate}%) is costing you more than your investments are earning (${savingsRate}%). Clear this first.`,
+        icon: <ArrowUpCircle className="text-orange-500" />
+      };
+    } else {
+      return {
+        action: `Invest extra in ${highestSavings?.name || 'Savings'}`,
+        reason: `Your investment return (${savingsRate}%) is currently beating your debt interest (${debtRate}%).`,
+        icon: <TrendingUp className="text-emerald-500" />
+      };
+    }
+  }, [debts, savings]);
+
+  // --- Projection Logic (Advanced) ---
+  const projectionData = useMemo(() => {
+    let currentDebts = debts.map(d => ({ ...d }));
+    let currentSavingsTotal = savings.reduce((sum, s) => sum + s.balance, 0);
+    const avgSavingsRate = savings.length > 0 
+      ? savings.reduce((sum, s) => sum + s.rate, 0) / savings.length 
+      : 0;
+
+    const data = [];
+    
+    for (let i = 0; i <= 24; i++) {
+      const totalRemainingDebt = currentDebts.reduce((sum, d) => sum + d.balance, 0);
+      data.push({
+        month: i === 0 ? 'Now' : `M${i}`,
+        Debt: Math.round(totalRemainingDebt),
+        Savings: Math.round(currentSavingsTotal)
+      });
+
+      // 1. Apply Savings Growth
+      currentSavingsTotal *= (1 + (avgSavingsRate / 100 / 12));
+
+      // 2. Process Debts
+      let monthlyExtra = extraCash;
+      
+      // Sort debts by interest rate for Avalanche method
+      currentDebts.sort((a, b) => b.rate - a.rate);
+
+      currentDebts = currentDebts.map(d => {
+        if (d.balance <= 0) return d;
+        
+        // Add interest
+        const interest = d.balance * (d.rate / 100 / 12);
+        let balance = d.balance + interest;
+        
+        // Subtract min payment
+        const pay = Math.min(balance, d.minPayment);
+        balance -= pay;
+        
+        return { ...d, balance };
+      });
+
+      // 3. Apply Extra Cash to highest interest debt
+      for (let d of currentDebts) {
+        if (monthlyExtra <= 0) break;
+        if (d.balance > 0) {
+          const extraPay = Math.min(d.balance, monthlyExtra);
+          d.balance -= extraPay;
+          monthlyExtra -= extraPay;
+        }
+      }
+
+      // 4. If debt is 0, add leftover extra cash to savings
+      if (monthlyExtra > 0) {
+        currentSavingsTotal += monthlyExtra;
+      }
+    }
+    return data;
+  }, [debts, savings, extraCash]);
+
+  const totalDebt = debts.reduce((sum, d) => sum + d.balance, 0);
+  const totalSavings = savings.reduce((sum, s) => sum + s.balance, 0);
+
+  // --- UI Components ---
+  const Card = ({ title, children, icon, onAdd }) => (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <h3 className="font-semibold text-slate-700 flex items-center gap-2">
+          {icon} {title}
+        </h3>
+        {onAdd && (
+          <button onClick={onAdd} className="text-indigo-600 hover:text-indigo-800 transition-colors">
+            <PlusCircle size={20} />
+          </button>
+        )}
+      </div>
+      <div className="p-6 flex-1">{children}</div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Financial Freedom Dashboard</h1>
+            <p className="text-slate-500">Managing debt and maximizing growth.</p>
+          </div>
+          <div className="bg-white px-6 py-3 rounded-xl border border-slate-200 shadow-sm">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Net Worth</p>
+            <p className={`text-2xl font-black ${totalSavings - totalDebt >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              ${(totalSavings - totalDebt).toLocaleString()}
+            </p>
+          </div>
+        </header>
+
+        {/* Smart Recommendation Card */}
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-700 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-center gap-6">
+          <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm">
+            <Calculator size={32} />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <h2 className="text-lg font-bold opacity-90">Strategic Advice</h2>
+            <p className="text-2xl font-bold leading-tight">{recommendation?.action}</p>
+            <p className="text-indigo-100 text-sm mt-1">{recommendation?.reason}</p>
+          </div>
+          <div className="px-6 py-3 bg-white/10 border border-white/20 rounded-xl flex items-center gap-2">
+            <Info size={16} />
+            <span className="text-sm font-medium">Interest-Rate Optimized</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* Debts Section */}
+          <div className="space-y-6">
+            <Card 
+              title="Debts & Mortgages" 
+              icon={<Landmark size={20} className="text-rose-500" />}
+              onAdd={() => setShowDebtForm(true)}
+            >
+              {showDebtForm && (
+                <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-indigo-100 space-y-3">
+                  <input placeholder="Name (e.g. Mortgage)" className="w-full p-2 border rounded" value={newEntry.name} onChange={e => setNewEntry({...newEntry, name: e.target.value})} />
+                  <div className="grid grid-cols-3 gap-2">
+                    <input placeholder="Balance" type="number" className="p-2 border rounded" value={newEntry.balance} onChange={e => setNewEntry({...newEntry, balance: e.target.value})} />
+                    <input placeholder="Rate %" type="number" className="p-2 border rounded" value={newEntry.rate} onChange={e => setNewEntry({...newEntry, rate: e.target.value})} />
+                    <input placeholder="Min Pay" type="number" className="p-2 border rounded" value={newEntry.minPayment} onChange={e => setNewEntry({...newEntry, minPayment: e.target.value})} />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addDebt} className="flex-1 bg-indigo-600 text-white py-2 rounded font-bold">Add</button>
+                    <button onClick={() => setShowDebtForm(false)} className="px-4 py-2 text-slate-500">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {debts.map(debt => (
+                  <div key={debt.id} className="group flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 hover:border-rose-200 transition-all shadow-sm">
+                    <div>
+                      <p className="font-bold text-slate-800">{debt.name}</p>
+                      <p className="text-xs text-slate-400 font-medium uppercase tracking-tighter">
+                        {debt.rate}% Interest · Min ${debt.minPayment}/mo
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="font-mono font-bold text-rose-600 text-lg">${Math.round(debt.balance).toLocaleString()}</p>
+                      <button 
+                        onClick={() => setDebts(debts.filter(d => d.id !== debt.id))}
+                        className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card 
+              title="Savings & Assets" 
+              icon={<ShieldCheck size={20} className="text-emerald-500" />}
+              onAdd={() => setShowSaveForm(true)}
+            >
+              {showSaveForm && (
+                <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-indigo-100 space-y-3">
+                  <input placeholder="Name (e.g. ISA)" className="w-full p-2 border rounded" value={newEntry.name} onChange={e => setNewEntry({...newEntry, name: e.target.value})} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input placeholder="Balance" type="number" className="p-2 border rounded" value={newEntry.balance} onChange={e => setNewEntry({...newEntry, balance: e.target.value})} />
+                    <input placeholder="Ann. Return %" type="number" className="p-2 border rounded" value={newEntry.rate} onChange={e => setNewEntry({...newEntry, rate: e.target.value})} />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={addSaving} className="flex-1 bg-indigo-600 text-white py-2 rounded font-bold">Add</button>
+                    <button onClick={() => setShowSaveForm(false)} className="px-4 py-2 text-slate-500">Cancel</button>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-3">
+                {savings.map(save => (
+                  <div key={save.id} className="group flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 hover:border-emerald-200 transition-all shadow-sm">
+                    <div>
+                      <p className="font-bold text-slate-800">{save.name}</p>
+                      <p className="text-xs text-slate-400 font-medium uppercase tracking-tighter">{save.rate}% Est. Return</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="font-mono font-bold text-emerald-600 text-lg">${Math.round(save.balance).toLocaleString()}</p>
+                      <button 
+                        onClick={() => setSavings(savings.filter(s => s.id !== save.id))}
+                        className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Controls & Projection */}
+          <div className="space-y-6">
+            <Card title="Monthly Allocation" icon={<DollarSign size={20} className="text-indigo-500" />}>
+              <div className="space-y-6">
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-slate-600 text-sm font-bold">Extra Monthly Cash</span>
+                    <span className="font-mono font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full text-lg">
+                      ${extraCash}
+                    </span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="5000" 
+                    step="50"
+                    value={extraCash}
+                    onChange={(e) => setExtraCash(parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    <span>Low</span>
+                    <span>Aggressive</span>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex gap-3">
+                  <div className="text-indigo-500 mt-1"><Info size={18}/></div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    The chart below projects your balances over the next 24 months. It assumes 
+                    you pay minimums on everything and apply the <strong>${extraCash}</strong> extra cash 
+                    to whatever is recommended above.
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card title="24-Month Projection" icon={<TrendingUp size={20} className="text-slate-400" />}>
+              <div className="h-[320px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={projectionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorDebt" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorSavings" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`$${value.toLocaleString()}`, '']}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{paddingTop: '20px'}} />
+                    <Area type="monotone" dataKey="Debt" stroke="#ef4444" fillOpacity={1} fill="url(#colorDebt)" strokeWidth={4} />
+                    <Area type="monotone" dataKey="Savings" stroke="#10b981" fillOpacity={1} fill="url(#colorSavings)" strokeWidth={4} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </div>
+
+        </div>
+
+        <footer className="text-center text-slate-400 text-xs pb-12 pt-8 border-t border-slate-200">
+          Wealth Dashboard Framework &copy; {new Date().getFullYear()} · All calculations are estimates based on user inputs.
+        </footer>
+      </div>
+    </div>
+  );
+};
+
+export default App;
